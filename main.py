@@ -4,6 +4,7 @@ import pandas as pd
 import joblib
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
+from typing import Optional
 
 app = FastAPI()
 
@@ -22,9 +23,10 @@ model = joblib.load('model_unified.pkl')
 class SizeInput(BaseModel):
     cao: float
     nang: float
-    nguc: float = None
-    eo: float = None
-    mong: float = None
+    # Thêm Optional[...] vào 3 dòng dưới để chấp nhận null
+    nguc: Optional[float] = None
+    eo: Optional[float] = None
+    mong: Optional[float] = None
 
 # --- HÀM MỚI: HIỆU CHỈNH ĐỘ TIN CẬY ---
 def adjust_confidence(raw_prob, data: SizeInput):
