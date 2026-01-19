@@ -62,7 +62,7 @@ def adjust_confidence(raw_prob, data: SizeInput):
 
 @app.post("/predict")
 def predict_size(data: SizeInput):
-    # Xử lý input
+    # 1. XỬ LÝ DỮ LIỆU ĐẦU VÀO (Như cũ)
     nguc_val = data.nguc if data.nguc is not None and data.nguc > 0 else -1
     eo_val   = data.eo   if data.eo   is not None and data.eo   > 0 else -1
     mong_val = data.mong if data.mong is not None and data.mong > 0 else -1
@@ -74,46 +74,63 @@ def predict_size(data: SizeInput):
         'Hieu_So': hieu_so
     }])
     
-    # Lấy xác suất gốc từ AI
+    # 2. DỰ ĐOÁN (Lấy Top 1 và Top 2)
     probs = model.predict_proba(input_df)[0]
     classes = model.classes_
     
-    # Tìm Top 1 và Top 2
-    top_idx = np.argsort(probs)[-2:]
-    size_1 = classes[top_idx[1]]
-    size_2 = classes[top_idx[0]]
+    # Sắp xếp xác suất tăng dần
+    top_idx = np.argsort(probs)[-2:] 
+    
+    size_1 = classes[top_idx[1]] # Size tốt nhất (Top 1)
+    size_2 = classes[top_idx[0]] # Size tốt nhì (Top 2)
+    
     raw_score_1 = probs[top_idx[1]]
     raw_score_2 = probs[top_idx[0]]
     
-    # --- ÁP DỤNG HIỆU CHỈNH ---
+    # 3. TÍNH ĐỘ TIN CẬY (Áp dụng hình phạt nếu thiếu thông tin)
     final_score = adjust_confidence(raw_score_1, data)
     
-    # Logic trả lời
+    # Xác định phương pháp dự đoán (để hiển thị)
     method = "Phân tích đa chiều"
     if nguc_val > 0 and eo_val > 0 and mong_val > 0:
-        method = "Chính xác cao (Đủ 5 chỉ số)"
+        method = "Chính xác cao (Full chỉ số)"
     elif nguc_val > 0 or eo_val > 0 or mong_val > 0:
         method = "Kết hợp số đo & ước lượng"
     else:
         method = "Ước lượng theo Chiều cao/Cân nặng"
 
-    # Tư vấn
+    # 4. LOGIC TRẢ KẾT QUẢ (Đã nâng cấp)
     result = {}
     
-    # Nếu chênh lệch giữa 2 size quá thấp (AI phân vân)
+    # TRƯỜNG HỢP A: AI thực sự phân vân (Tỷ lệ bầu chọn ngang ngửa nhau)
+    # Ví dụ: Size M (48%) vs Size L (45%) -> Chênh lệch < 15%
     if (raw_score_1 - raw_score_2) < 0.15:
         result = {
             "size": f"{size_1} hoặc {size_2}",
-            "percent": f"{final_score:.0%}", # Trả về số % đã làm mượt
+            "percent": f"{final_score:.0%}",
             "method": method,
-            "message": f"Hệ thống phân vân giữa {size_2} và {size_1}. Bạn nên chọn theo sở thích (ôm/rộng)."
+            "message": f"Hệ thống phân vân giữa {size_2} và {size_1}. Bạn nên chọn theo sở thích (thích rộng lấy {size_1}, thích ôm lấy {size_2})."
         }
+        
+    # TRƯỜNG HỢP B: AI chọn được size, nhưng độ tin cậy thấp (< 80%)
+    # Ví dụ: Chỉ nhập Cao/Nặng, hoặc số đo lạ -> Tin cậy 70%
+    elif final_score < 0.80:
+        result = {
+            # Hiển thị kiểu: "M (Nên thử thêm L)"
+            "size": f"{size_1}", 
+            "percent": f"{final_score:.0%}",
+            "method": method,
+            # Gợi ý thêm Size 2 trong lời nhắn
+            "message": f"⚠️ Độ tin cậy thấp (<80%) do thiếu thông tin hoặc số đo lạ. AI khuyên bạn chọn **{size_1}**, nhưng hãy cân nhắc thử thêm **{size_2}** cho chắc chắn."
+        }
+        
+    # TRƯỜNG HỢP C: Tin cậy cao (>= 80%) -> Chốt đơn 1 size
     else:
         result = {
             "size": size_1,
-            "percent": f"{final_score:.0%}", # Trả về số % đã làm mượt
+            "percent": f"{final_score:.0%}",
             "method": method,
-            "message": f"Size {size_1} là lựa chọn tối ưu nhất cho bạn."
+            "message": f"Tuyệt vời! Dựa trên số liệu, Size {size_1} là lựa chọn chuẩn xác nhất cho bạn."
         }
         
     return result
